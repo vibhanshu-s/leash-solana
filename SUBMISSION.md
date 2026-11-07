@@ -1,6 +1,6 @@
 # MLH submission text
 
-**Name:** Leash
+**Name:** Leash for AI Agents
 
 **Pitch:** A spending limit an AI agent can't be talked out of, enforced by a Solana program.
 
@@ -22,7 +22,7 @@ Runs on devnet with test tokens only. Not audited.
 **Live demo:** https://leash-solana-two.vercel.app
 
 **Other links:**
-- Demo video: https://leash-solana-two.vercel.app/leash-demo.mp4
+- Demo video: https://youtu.be/DkJRGFvWiZs
 - Pitch deck: https://leash-solana-two.vercel.app/deck
 - Deck PDF: https://leash-solana-two.vercel.app/leash-deck.pdf
 - Program on devnet: https://explorer.solana.com/address/E5f5368y384TnC3XCFdTEhZnh1mCaHPKsy3zdZYchgtD?cluster=devnet

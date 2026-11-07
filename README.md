@@ -7,7 +7,7 @@ Give an agent money and one poisoned web page can spend it. Prompt guardrails si
 > Devnet and test tokens only. dUSD is a test mint with no value.
 
 - **Live demo:** https://leash-solana-two.vercel.app (no wallet or install needed)
-- **Demo video:** https://leash-solana-two.vercel.app/leash-demo.mp4
+- **Demo video:** https://youtu.be/DkJRGFvWiZs
 - **Pitch deck:** https://leash-solana-two.vercel.app/deck ([PDF](https://leash-solana-two.vercel.app/leash-deck.pdf))
 - **A refused attack on-chain:** [failed transaction](https://explorer.solana.com/tx/2kwxvSv58Uzg2iqxCDKP2iAUMwyba8hJoa2j8J9Yd2qEteksURCFB9MbS7UZAbRCkzZTCMoNEy3yUQh1gtVMSxLH?cluster=devnet)
 - **Program:** [`E5f5368y384TnC3XCFdTEhZnh1mCaHPKsy3zdZYchgtD`](https://explorer.solana.com/address/E5f5368y384TnC3XCFdTEhZnh1mCaHPKsy3zdZYchgtD?cluster=devnet)
