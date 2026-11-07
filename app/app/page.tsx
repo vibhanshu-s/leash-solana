@@ -84,7 +84,7 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [state, setState] = useState<State | null>(null);
   const [text, setText] = useState("");
-  const feedEnd = useRef<HTMLDivElement>(null);
+  const feed = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     const r = await fetch("/api/state").catch(() => null);
@@ -98,12 +98,13 @@ export default function Home() {
   }, [refresh]);
 
   useEffect(() => {
-    if (events.length > 0) feedEnd.current?.scrollIntoView({ block: "nearest" });
-  }, [events]);
+    if (feed.current) feed.current.scrollTop = feed.current.scrollHeight;
+  }, [events, busy]);
 
   async function run(body: Record<string, string>) {
     setBusy(true);
     setEvents([]);
+    if (window.innerWidth <= 1080) feed.current?.scrollIntoView({ block: "start", behavior: "smooth" });
     try {
       const res = await fetch("/api/run", {
         method: "POST",
@@ -133,6 +134,8 @@ export default function Home() {
     }
   }
 
+  const blocked = events.find((e): e is Extract<Ev, { t: "refused" }> => e.t === "refused");
+  const stolen = events.find((e): e is Extract<Ev, { t: "paid" }> => e.t === "paid" && e.wallet === "hot");
   const p = state?.policy;
   const refused = state?.ledger.filter((l) => l.refusal).length ?? 0;
 
@@ -143,6 +146,7 @@ export default function Home() {
         <div className="nav-links">
           <a href="#demo">Demo</a>
           <a href="#how">How it works</a>
+          <a href="/leash-demo.mp4">Video</a>
           <a href="/deck">Deck</a>
           <a href={REPO}>GitHub</a>
         </div>
@@ -198,11 +202,16 @@ export default function Home() {
             </button>
           </div>
 
-          <div className="panel feed" aria-live="polite">
+          <div className="panel feed" aria-live="polite" ref={feed}>
             {events.length === 0 && !busy && <p className="empty">Pick an attack. Refused payments get stamped here, with proof.</p>}
             {events.map((e, i) => <Event key={i} e={e} />)}
             {busy && <div className="line">Working on devnet…</div>}
-            <div ref={feedEnd} />
+            {!busy && blocked && stolen && (
+              <div className="verdict">
+                <div className="safe"><span>With Leash</span><b>{blocked.amount} dUSD safe</b></div>
+                <div className="lost"><span>Plain hot wallet</span><b>{stolen.amount} dUSD gone</b></div>
+              </div>
+            )}
           </div>
 
           <div className="side">
