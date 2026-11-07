@@ -31,7 +31,8 @@ export async function POST(req: Request) {
         if (mode === "mission") await runMission(origin, emit);
         else await runAttack(origin, attack ?? "steal", text, emit);
       } catch (e) {
-        emit({ t: "error", text: (e as Error).message.slice(0, 200) });
+        console.error("run failed", e);
+        emit({ t: "error", text: String((e as Error)?.message ?? e).slice(0, 200) });
       }
       controller.close();
     },

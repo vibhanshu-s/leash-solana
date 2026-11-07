@@ -1,1 +1,14 @@
-{}
+{
+  "programId": "E5f5368y384TnC3XCFdTEhZnh1mCaHPKsy3zdZYchgtD",
+  "mint": "AN1Fi6vvFpeAR3FLQ4rAjq6r1xdH7sf2W3rGnD1JVmBt",
+  "owner": "51tg6EvxrLPgbUbj9grABsnMceKkA74JZ3JvJkVdjSiz",
+  "agent": "Gd97rdZsZYmZoH2eYp6hZ9zJvYFKJC1oRQNEtZ6oQw7",
+  "sandboxAgent": "ECh3nECrecKaS2LihtFzpipJn35qfMKH5VZ87PgwLt7i",
+  "hotWallet": "AiXskun7YGtm7kGtqFSAQwBQ19x5n3kNH53MoWQRB6go",
+  "attacker": "2eiKYR9Ps7KT4D58UsgiKwENSBcqtD9ZWZr3uuYSnSDC",
+  "merchants": [
+    "13ZQXXWGNQawnPG3xoM5ebTASQfvGyoSZLE9iyfpkwmG",
+    "FFRc7qaaBh1TByY5nqo8rJmjxib28LhrddZXHQdFh6qK",
+    "F6ARskCW37myp3sAh5wzd6JcJD7esXLJg4nx4CZdmChM"
+  ]
+}

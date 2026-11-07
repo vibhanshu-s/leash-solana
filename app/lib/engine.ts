@@ -16,6 +16,7 @@ import {
   reasonHash,
   sendAndConfirm,
   setPausedIx,
+  withRetry,
   toDusd,
   toUnits,
   vaultPda,
@@ -109,7 +110,9 @@ export async function apiData(id: ApiId): Promise<Record<string, unknown>> {
 /** Confirms a payment landed on-chain, succeeded, and paid this merchant enough. */
 export async function verifyPayment(signature: string, merchant: string, price: number) {
   const conn = connection();
-  const tx = await conn.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
+  const tx = await withRetry(() =>
+    conn.getParsedTransaction(signature, { maxSupportedTransactionVersion: 0, commitment: "confirmed" }),
+  );
   if (!tx || tx.meta?.err) return false;
   const bal = (list: { owner?: string; mint: string; uiTokenAmount: { amount: string } }[] | null | undefined) =>
     Number(list?.find((b) => b.owner === merchant && b.mint === deployment.mint)?.uiTokenAmount.amount ?? 0);
@@ -129,10 +132,13 @@ function wallets(kind: "main" | "sandbox") {
   return { agent, policy, vault: vaultPda(programId(), policy) };
 }
 
+const knownAccounts = new Set<string>();
+
 async function ensureTokenAccount(to: PublicKey) {
   const conn = connection();
   const ata = getAssociatedTokenAddressSync(mint(), to, true);
-  if (!(await conn.getAccountInfo(ata))) {
+  if (knownAccounts.has(ata.toBase58())) return ata;
+  if (!(await withRetry(() => conn.getAccountInfo(ata)))) {
     const owner = keypairFrom(process.env.OWNER_KEY ?? "");
     const r = await sendAndConfirm(
       conn,
@@ -141,6 +147,7 @@ async function ensureTokenAccount(to: PublicKey) {
     );
     if (!r.ok) throw new Error("Could not create a token account for that address");
   }
+  knownAccounts.add(ata.toBase58());
   return ata;
 }
 
@@ -162,7 +169,7 @@ async function hotWalletPay(to: string, amount: number, reason: string, emit: Em
   const owner = keypairFrom(process.env.OWNER_KEY ?? "");
   const from = getAssociatedTokenAddressSync(mint(), hot.publicKey);
   const dest = await ensureTokenAccount(new PublicKey(to));
-  const balance = BigInt((await conn.getTokenAccountBalance(from)).value.amount);
+  const balance = BigInt((await withRetry(() => conn.getTokenAccountBalance(from))).value.amount);
   const units = toUnits(amount) < balance ? toUnits(amount) : balance;
   emit({ t: "paying", to: label(to), amount: toDusd(units), reason, wallet: "hot" });
   const r = await sendAndConfirm(conn, [createTransferInstruction(from, dest, hot.publicKey, units)], [hot]);
@@ -305,7 +312,7 @@ export async function runMission(origin: string, emit: Emit) {
     const { text } = await toolLoop(ai, SYSTEM, GOAL, ctx, "main");
     emit({ t: "final", text: text || "The agent stopped without a brief." });
   } catch (e) {
-    emit({ t: "step", text: `Model call failed (${(e as Error).message.slice(0, 80)}). Finishing with the script.` });
+    emit({ t: "step", text: `Model call failed (${String((e as Error)?.message ?? e).slice(0, 80)}). Finishing with the script.` });
     await scriptedMission({ ...ctx, receipts: ctx.receipts });
   }
 }
@@ -339,7 +346,7 @@ async function hijack(origin: string, poison: string, emit: Emit) {
         emit({ t: "resisted", text: "The model ignored the attack this time. Leash does not depend on that." });
       }
     } catch (e) {
-      emit({ t: "step", text: `Model call failed (${(e as Error).message.slice(0, 80)}).` });
+      emit({ t: "step", text: `Model call failed (${String((e as Error)?.message ?? e).slice(0, 80)}).` });
     }
   }
   if (!attempted) {

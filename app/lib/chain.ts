@@ -15,8 +15,23 @@ export const DECIMALS = 6;
 export const toUnits = (dusd: number) => BigInt(Math.round(dusd * 10 ** DECIMALS));
 export const toDusd = (units: bigint | number) => Number(units) / 10 ** DECIMALS;
 
-export const connection = (url = process.env.RPC_URL || "https://api.devnet.solana.com") =>
-  new Connection(url, "confirmed");
+let shared: Connection | null = null;
+export const connection = () =>
+  (shared ??= new Connection(process.env.RPC_URL || "https://api.devnet.solana.com", "confirmed"));
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Retries RPC calls through the public endpoint's rate limits. */
+export async function withRetry<T>(fn: () => Promise<T>, tries = 6): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      if (i >= tries) throw e instanceof Error ? e : new Error(JSON.stringify(e));
+      await sleep(400 * 2 ** (i - 1));
+    }
+  }
+}
 
 export const keypairFrom = (b58: string) => Keypair.fromSecretKey(bs58.decode(b58.trim()));
 
@@ -198,20 +213,31 @@ export async function sendAndConfirm(
   ixs: TransactionInstruction[],
   signers: Keypair[],
 ): Promise<SendResult> {
-  const { blockhash, lastValidBlockHeight } = await conn.getLatestBlockhash("confirmed");
+  const { blockhash, lastValidBlockHeight } = await withRetry(() => conn.getLatestBlockhash("confirmed"));
   const tx = new Transaction({ feePayer: signers[0].publicKey, blockhash, lastValidBlockHeight });
   tx.add(ComputeBudgetProgram.setComputeUnitLimit({ units: 120_000 }), ...ixs);
   tx.sign(...signers);
-  const signature = await conn.sendRawTransaction(tx.serialize(), { skipPreflight: true, maxRetries: 5 });
-  const res = await conn.confirmTransaction({ signature, blockhash, lastValidBlockHeight }, "confirmed");
-  if (!res.value.err) return { ok: true, signature };
-  const custom = (res.value.err as { InstructionError?: [number, { Custom?: number }] }).InstructionError?.[1]
+  const raw = tx.serialize();
+  const signature = await withRetry(() => conn.sendRawTransaction(raw, { skipPreflight: true, maxRetries: 5 }));
+
+  // Polling, not websockets: public RPC limits websocket subscriptions hard.
+  let err: unknown = undefined;
+  const deadline = Date.now() + 45_000;
+  while (err === undefined) {
+    if (Date.now() > deadline) throw new Error("Timed out waiting for devnet to confirm");
+    await sleep(900);
+    const status = await withRetry(() => conn.getSignatureStatus(signature)).catch(() => null);
+    if (status?.value?.confirmationStatus && status.value.confirmationStatus !== "processed") err = status.value.err;
+    else if (status && !status.value) conn.sendRawTransaction(raw, { skipPreflight: true }).catch(() => null);
+  }
+  if (!err) return { ok: true, signature };
+  const custom = (err as { InstructionError?: [number, { Custom?: number }] }).InstructionError?.[1]
     ?.Custom;
   const refusal = custom !== undefined ? REFUSALS[custom] : undefined;
   return {
     ok: false,
     signature,
     code: refusal?.code ?? `Custom${custom ?? ""}`,
-    text: refusal?.text ?? JSON.stringify(res.value.err),
+    text: refusal?.text ?? JSON.stringify(err),
   };
 }

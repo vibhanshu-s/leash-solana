@@ -93,7 +93,7 @@ export default function Home() {
 
   useEffect(() => {
     refresh();
-    const id = setInterval(refresh, 8000);
+    const id = setInterval(refresh, 15_000);
     return () => clearInterval(id);
   }, [refresh]);
 
