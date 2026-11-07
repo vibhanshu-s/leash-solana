@@ -1,0 +1,9 @@
+target/
+node_modules/
+.next/
+.keys/
+.env*
+!.env.example
+*.tsbuildinfo
+.vercel/
+recordings/

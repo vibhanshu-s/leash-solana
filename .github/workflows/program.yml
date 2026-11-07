@@ -1,0 +1,49 @@
+name: program
+
+on:
+  push:
+    branches: [main]
+    paths: ["programs/**", "Cargo.*", ".github/workflows/program.yml"]
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: Deploy to devnet
+        type: boolean
+        default: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cache/solana
+            ~/.local/share/solana
+            target
+          key: sbf-${{ hashFiles('Cargo.lock') }}
+      - name: Unit tests
+        run: cargo test -p leash --lib
+      - name: Install Solana tools
+        run: |
+          sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+      - name: Build SBF
+        run: cargo build-sbf --manifest-path programs/leash/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: leash-so
+          path: target/deploy/leash.so
+      - name: Deploy to devnet
+        if: ${{ github.event.inputs.deploy == 'true' }}
+        env:
+          DEPLOYER: ${{ secrets.DEVNET_DEPLOYER }}
+          PROGRAM_KEY: ${{ secrets.DEVNET_PROGRAM_KEY }}
+        run: |
+          echo "$DEPLOYER" > /tmp/deployer.json
+          echo "$PROGRAM_KEY" > /tmp/program.json
+          solana config set --url https://api.devnet.solana.com --keypair /tmp/deployer.json
+          solana balance
+          solana program deploy target/deploy/leash.so --program-id /tmp/program.json --use-rpc
