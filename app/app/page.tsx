@@ -27,7 +27,7 @@ type State = {
   ledger: { signature: string; ok: boolean; refusal: string | null }[];
 };
 
-const REPO = "https://github.com/PLACEHOLDER/leash";
+const REPO = "https://github.com/vibhanshu-s/leash";
 const tx = (s: string) => `https://explorer.solana.com/tx/${s}?cluster=devnet`;
 const acct = (a: string) => `https://explorer.solana.com/address/${a}?cluster=devnet`;
 
