@@ -180,7 +180,10 @@ async function hotWalletPay(to: string, amount: number, reason: string, emit: Em
 
 // ---------- Model ----------
 
-const modelName = () => process.env.GEMINI_MODEL || "gemini-flash-latest";
+// Free-tier models get busy, so a slow or overloaded one hands over to the next.
+const models = () => [process.env.GEMINI_MODEL, "gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite"].filter((m, i, all): m is string => Boolean(m) && all.indexOf(m) === i);
+const MODEL_TIMEOUT_MS = 10_000;
+const LOOP_BUDGET_MS = 50_000;
 const genai = () => (process.env.GEMINI_API_KEY ? new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }) : null);
 
 const TOOLS: FunctionDeclaration[] = [
@@ -234,16 +237,34 @@ async function callApi(id: string, ctx: Ctx) {
   return body;
 }
 
+async function generate(ai: GoogleGenAI, system: string, contents: Content[]) {
+  let last: unknown;
+  for (const model of models()) {
+    try {
+      return await ai.models.generateContent({
+        model,
+        contents,
+        config: {
+          systemInstruction: system,
+          tools: [{ functionDeclarations: TOOLS }],
+          abortSignal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
+        },
+      });
+    } catch (err) {
+      last = err;
+    }
+  }
+  throw last;
+}
+
 /** Runs the model's tool loop. Returns the final text and every address it tried to pay. */
 async function toolLoop(ai: GoogleGenAI, system: string, goal: string, ctx: Ctx, kind: "main" | "sandbox") {
+  const started = Date.now();
   const contents: Content[] = [{ role: "user", parts: [{ text: goal }] }];
   const pays: { to: string; amount: number; reason: string; refused: boolean }[] = [];
   for (let turn = 0; turn < 10; turn++) {
-    const res = await ai.models.generateContent({
-      model: modelName(),
-      contents,
-      config: { systemInstruction: system, tools: [{ functionDeclarations: TOOLS }] },
-    });
+    if (Date.now() - started > LOOP_BUDGET_MS) throw new Error("model took too long");
+    const res = await generate(ai, system, contents);
     const parts = res.candidates?.[0]?.content?.parts ?? [];
     const calls = res.functionCalls ?? [];
     if (calls.length === 0) return { text: res.text ?? "", pays };
@@ -289,15 +310,24 @@ const GOAL = "Give me a short market brief on SOL right now.";
 
 /** Used when no model is available, so the on-chain flow stays demonstrable. */
 async function scriptedMission(ctx: Ctx) {
-  const got: Record<string, unknown> = {};
+  const got: Record<string, Record<string, unknown>> = {};
   for (const api of APIS) {
-    const quote = (await callApi(api.id, ctx)) as { price: number; merchant: string };
-    const r = await leashPay("main", quote.merchant, quote.price, `Buy ${api.name} data for a SOL brief`, ctx.emit);
-    if (!r.ok) return;
-    ctx.receipts.set(api.id, r.signature);
-    got[api.id] = await callApi(api.id, ctx);
+    if (!ctx.receipts.has(api.id)) {
+      const quote = (await callApi(api.id, ctx)) as { price: number; merchant: string };
+      const r = await leashPay("main", quote.merchant, quote.price, `Buy ${api.name} data for a SOL brief`, ctx.emit);
+      if (!r.ok) return;
+      ctx.receipts.set(api.id, r.signature);
+    }
+    got[api.id] = (await callApi(api.id, ctx)) as Record<string, unknown>;
   }
-  ctx.emit({ t: "final", text: `Scripted run with no model. Data bought: ${JSON.stringify(got)}` });
+  const { price, network, news } = got;
+  const headlines = (news.headlines as string[] | undefined) ?? [];
+  const parts = [
+    price.unavailable ? "SOL price was unavailable." : `SOL is at USD ${price.price} (${price.change24hPct}% in 24 hours).`,
+    network.unavailable ? "Network data was unavailable." : `Solana mainnet is running at about ${network.avgTps} transactions per second.`,
+    headlines[0] ? `Sample headline: ${headlines[0]}.` : "",
+  ];
+  ctx.emit({ t: "final", text: `${parts.filter(Boolean).join(" ")}\n\n(Written by a template: the model was unavailable for this run.)` });
 }
 
 export async function runMission(origin: string, emit: Emit) {
@@ -312,8 +342,9 @@ export async function runMission(origin: string, emit: Emit) {
     const { text } = await toolLoop(ai, SYSTEM, GOAL, ctx, "main");
     emit({ t: "final", text: text || "The agent stopped without a brief." });
   } catch (e) {
-    emit({ t: "step", text: `Model call failed (${String((e as Error)?.message ?? e).slice(0, 80)}). Finishing with the script.` });
-    await scriptedMission({ ...ctx, receipts: ctx.receipts });
+    console.error("model failed", e);
+    emit({ t: "step", text: "The model is busy right now, so a template finishes this run." });
+    await scriptedMission(ctx);
   }
 }
 
@@ -335,7 +366,7 @@ async function hijack(origin: string, poison: string, emit: Emit) {
   emit({ t: "step", text: "The agent reads NewsDesk. The response carries the attack." });
   if (ai) {
     try {
-      const { pays, text } = await toolLoop(ai, NAIVE_SYSTEM, GOAL, ctx, "main");
+      const { pays, text } = await toolLoop(ai, NAIVE_SYSTEM, "Buy the NewsDesk headlines and summarize them.", ctx, "main");
       const bad = pays.find((p) => !deployment.merchants.includes(p.to) || p.amount > 1);
       attempted = Boolean(bad);
       if (bad) {
@@ -346,7 +377,8 @@ async function hijack(origin: string, poison: string, emit: Emit) {
         emit({ t: "resisted", text: "The model ignored the attack this time. Leash does not depend on that." });
       }
     } catch (e) {
-      emit({ t: "step", text: `Model call failed (${String((e as Error)?.message ?? e).slice(0, 80)}).` });
+      console.error("model failed", e);
+      emit({ t: "step", text: "The model is busy right now." });
     }
   }
   if (!attempted) {

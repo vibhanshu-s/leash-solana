@@ -98,7 +98,7 @@ export default function Home() {
   }, [refresh]);
 
   useEffect(() => {
-    feedEnd.current?.scrollIntoView({ block: "nearest" });
+    if (events.length > 0) feedEnd.current?.scrollIntoView({ block: "nearest" });
   }, [events]);
 
   async function run(body: Record<string, string>) {
